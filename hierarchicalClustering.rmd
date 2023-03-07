@@ -1,0 +1,224 @@
+---
+title: "hierarcicalClustering"
+author: "PoonamParagThakur"
+date: '2023-02-28'
+output: html_document
+---
+  
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(stats)  ## for dist
+
+## There are many clustering libraries
+#install.packages("NbClust")
+library(NbClust)
+library(cluster)
+#install.packages("mclust")
+library(mclust)
+#install.packages("factoextra")
+library(arules)
+library(Matrix)
+library(factoextra) ## for cluster vis, silhouette, etc.
+library(purrr)
+
+#install.packages("stylo")
+library(stylo)  ## for dist.cosine
+#install.packages("philentropy")
+library(philentropy)  ## for distance() which offers 46 metrics
+## https://cran.r-project.org/web/packages/philentropy/vignettes/Distances.html
+library(SnowballC)
+library(caTools)
+library(dplyr)
+#install.packages("textstem")
+library(stringr)
+#install.packages("wordcloud")
+library(wordcloud)
+library(tm)
+library(textstem)  ## Needed for lemmatize_strings
+```
+
+```{r}
+review_df<-read.csv('E:/Masters_Coursework/Sem4/Text Mining/Project/Data/nike_adidas_reviews_data.csv')
+#Open<-as.character(Open$Review)
+filtered_df <- data.frame(review_df$Review)
+
+```
+
+
+```{r}
+
+id <- rownames(filtered_df)
+final_df <- cbind(doc_id=id, filtered_df)
+colnames(final_df) <- c("doc_id", "text") 
+OpenCorp <- Corpus(DataframeSource(final_df))
+```
+
+
+```{r}
+OpenCorp <- tm_map(OpenCorp, tolower)  ### DO THIS FIRST before removing specific words!
+OpenCorp <- tm_map(OpenCorp, removeWords, c("also", "that", "this", "with", "anly", "have",
+                                             "class", "classes", "data"))
+ 
+OpenCorp <- tm_map(OpenCorp, removeWords, stopwords("english"))
+OpenCorp <-tm_map(OpenCorp, stemDocument)
+OpenCorp <- tm_map(OpenCorp, lemmatize_strings)
+```
+
+```{r}
+Open_dtm <- DocumentTermMatrix(OpenCorp,
+                               control = list(
+                                  stopwords = TRUE, 
+                                  wordLengths=c(4, 10),
+                                  removePunctuation = TRUE,
+                                  removeNumbers = TRUE,
+                                  tolower=TRUE,
+                                  remove_separators = TRUE
+                                )
+ )
+```
+
+
+
+```{r}
+nike_adidas_Corpus <- Corpus(DirSource('E:/Masters_Coursework/Sem4/Text Mining/Project/CORPUS'))
+SmallCorpus = nike_adidas_Corpus
+#(ndocs<-length(SmallCorpus))
+
+## Do some clean-up.............
+SmallCorpus <- tm_map(SmallCorpus, content_transformer(tolower))
+SmallCorpus <- tm_map(SmallCorpus, removePunctuation)
+SmallCorpus <- tm_map(SmallCorpus, removeWords, stopwords("english"))
+SmallCorpus <- tm_map(SmallCorpus, lemmatize_strings)
+SmallCorpus = tm_map(SmallCorpus, removeNumbers)
+SmallCorpus = tm_map(SmallCorpus, removeWords, c("the", "and", stopwords("english")))
+SmallCorpus =  tm_map(SmallCorpus, stripWhitespace)
+
+##-------------------------------------------------------------
+
+## Convert to Document Term Matrix  and TERM document matrix
+
+## DOCUMENT Term Matrix  (Docs are rows)
+SmallCorpus_DTM <- DocumentTermMatrix(SmallCorpus,
+                                 control = list(
+                                   stopwords = TRUE, ## remove normal stopwords
+                                   wordLengths=c(3, 10), ## get rid of words of len 2 or smaller or larger than 15
+                                   removePunctuation = TRUE,
+                                   removeNumbers = TRUE,
+                                   tolower=TRUE
+                                   #stemming = TRUE,
+                                 ))
+SmallCorpus_DTM = removeSparseTerms(SmallCorpus_DTM, 0.99)
+
+#inspect(SmallCorpus_DTM)
+
+## TERM Document Matrix  (words are rows)
+SmallCorpus_TERM_DM <- TermDocumentMatrix(SmallCorpus,
+                                      control = list(
+                                        stopwords = TRUE, ## remove normal stopwords
+                                        wordLengths=c(3, 10), ## get rid of words of len 2 or smaller or larger than 15
+                                        removePunctuation = TRUE,
+                                        removeNumbers = TRUE,
+                                        tolower=TRUE
+                                        #stemming = TRUE,
+                                      ))
+review_dtm_tfidf <- DocumentTermMatrix(SmallCorpus, control = list(weighting = weightTfIdf))
+review_dtm_tfidf = removeSparseTerms(review_dtm_tfidf, 0.99)
+freq = data.frame(sort(colSums(as.matrix(review_dtm_tfidf)), decreasing=TRUE))
+wordcloud(rownames(freq), freq[,1], max.words=100, colors=brewer.pal(1, "Dark2"))
+
+```
+
+```{r}
+SmallCorpus_DF_DT <- as.data.frame(as.matrix(Open_dtm))
+Novels_DF_DT = SmallCorpus_DF_DT
+```
+
+
+```{r}
+fviz_nbclust(SmallCorpus_DF_DT, method = "silhouette", 
+             FUN = hcut, k.max = 9)
+```
+
+```{r}
+kmeans_smallcorp_Result <- kmeans(t(SmallCorpus_DF_DT), 5, nstart=4)
+#print(kmeans_smallcorp_Result)
+
+cbind(t(SmallCorpus_DF_DT), cluster = kmeans_smallcorp_Result$cluster)
+
+My_Kmeans_SmallCorpD<-Kmeans(SmallCorpus_DF_DT, centers=2 ,
+                             method = "euclidean")
+#My_Kmeans_SmallCorpD$cluster
+#https://www.rdocumentation.org/packages/factoextra/versions/1.0.7/topics/fviz_cluster
+fviz_cluster(My_Kmeans_SmallCorpD, SmallCorpus_DF_DT, 
+             main="Euclidean k = 5",repel = TRUE) +
+  scale_color_brewer('Cluster', palette='Set2') + 
+  scale_fill_brewer('Cluster', palette='Set2') 
+  #scale_shape_manual('Cluster', values=c(100,2,24, 1)
+
+```
+
+
+```{r}
+CleanDFScale_N <- scale(Novels_DF_DT)
+## Create a Novels Matrix
+My_novels_m <- (as.matrix(Novels_DF_DT))
+nrow(My_novels_m)
+```
+
+```{r}
+## WORD CLOUD
+word.freq <- sort(rowSums(t(My_novels_m)), decreasing = T)
+wordcloud(words = names(word.freq[0:200]), freq = word.freq*2, min.freq = 2,
+          random.order = F)
+```
+
+
+```{r}
+
+## COsine Sim
+## a * b / (||a|| * ||b||)
+#CosineSim <- My_novels_m / sqrt(rowSums(My_novels_m * My_novels_m))
+#CosineSim <- CosineSim %*% t(CosineSim)
+
+#Convert to distance metric
+#D_Cos_Sim <- as.dist(1-CosineSim)
+#D_Cos_Sim[is.na(D_Cos_Sim)] <- 0
+#D_Cos_Sim[is.nan(D_Cos_Sim)] <- 0
+#sum(is.infinite(D_Cos_Sim))
+
+
+CosineSim <- My_novels_m[1:50,] / sqrt(rowSums(My_novels_m[1:50,] * My_novels_m[1:50,]))
+CosineSim <- na.omit(CosineSim)
+CosineSim <- CosineSim %*% t(CosineSim)
+D_Cos_Sim <- as.dist(1-CosineSim)
+
+HClust_Ward_CosSim_SmallCorp2 <- hclust(D_Cos_Sim, method="ward.D2")
+par(cex=0.3, mar=c(8, 4, 4, 1))
+plot(HClust_Ward_CosSim_SmallCorp2, cex=.7, hang=-1,main = "Cosine Sim")
+rect.hclust(HClust_Ward_CosSim_SmallCorp2, k=4)
+# reduced label size
+par(cex=1)
+axis(2)
+
+
+
+```
+
+
+
+
+```{r}
+#dend <- My_novels_m[1:50,] %>% # data
+ #       scale %>% # Scale the data
+  #      dist.cosine(CosineSim) %>% # calculate a distance matrix, 
+    #    hclust(method = "ward.D2") %>% # Hierarchical clustering 
+   #     as.dendrogram # Turn the object into a dendrogram.
+# plot(dend, cex=.7, hang=-1,main = "Cosine Sim")
+```
+
+```{r}
+
+```
+
+
+
